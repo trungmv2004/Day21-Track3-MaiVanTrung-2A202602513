@@ -23,6 +23,9 @@ gguf/
 runs/
 wandb/
 
+# Generated submission archives
+submission/*.zip
+
 # Model / HF cache
 .cache/
 hf_cache/

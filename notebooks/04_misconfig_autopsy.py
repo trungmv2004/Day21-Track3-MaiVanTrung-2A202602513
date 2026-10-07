@@ -25,11 +25,13 @@ import json, os, pathlib, sys, time
 sys.path.insert(0, str(pathlib.Path.cwd() / "src"))
 sys.path.insert(0, str(pathlib.Path.cwd().parent / "src"))
 
-from labkit import data, generate, modeling, report, train
+from labkit import data, device, experiment, generate, modeling, report, train
 from labkit.config import CONTRAST_KEYS, SPECS, get_tier, training_epochs
 
 ROOT = pathlib.Path.cwd() if (pathlib.Path.cwd() / "data").exists() else pathlib.Path.cwd().parent
 TIER = get_tier(os.environ.get("COMPUTE_TIER", "T4"))
+experiment.require_frozen_baseline(ROOT, TIER)
+BASELINE_SHA = experiment.file_hash(ROOT / "results" / "baselines_frozen.json")
 
 from datasets import Dataset
 
@@ -100,6 +102,7 @@ def run_contrast(key: str) -> dict:
               f"trainable tensors bf16 -> fp32 for the fp16 GradScaler")
 
     t0 = time.perf_counter()
+    started_at = experiment.utc_now()
     res = trainer.train()
     elapsed = time.perf_counter() - t0
 
@@ -109,6 +112,12 @@ def run_contrast(key: str) -> dict:
     row = train.summarize_run(spec, TIER, targets, trainable, elapsed, generate.peak_vram_gb())
     row["final_loss"] = round(res.training_loss, 4)
     row["max_steps"] = max_steps
+    row.update(started_at_utc=started_at, baseline_sha256=BASELINE_SHA,
+               epochs=training_epochs(), max_length=TIER.max_length,
+               mask_mode=os.environ.get("MASK_MODE", "assistant-only"))
+    report.write_json({"run": key, "log_history": trainer.state.log_history,
+                       "device": device.describe(), "baseline_sha256": BASELINE_SHA},
+                      f"training_{key}.json", results_dir=ROOT / "results")
     row["teaches"] = spec.teaches
     report.append_row(row, results_dir=ROOT / "results")
 

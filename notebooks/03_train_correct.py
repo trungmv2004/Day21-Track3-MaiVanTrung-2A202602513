@@ -32,12 +32,14 @@ import json, os, pathlib, sys, time
 sys.path.insert(0, str(pathlib.Path.cwd() / "src"))
 sys.path.insert(0, str(pathlib.Path.cwd().parent / "src"))
 
-from labkit import data, device, generate, modeling, report, train
+from labkit import data, device, experiment, generate, modeling, report, train
 from labkit.config import SPECS, get_tier, training_epochs
 
 ROOT = pathlib.Path.cwd() if (pathlib.Path.cwd() / "data").exists() else pathlib.Path.cwd().parent
 TIER = get_tier(os.environ.get("COMPUTE_TIER", "T4"))
 SPEC = SPECS["correct"]
+experiment.require_frozen_baseline(ROOT, TIER)
+BASELINE_SHA = experiment.file_hash(ROOT / "results" / "baselines_frozen.json")
 print(f"{TIER.name} · {TIER.model_id} · {SPEC.label}")
 print(device.banner())      # which precision is ACTUALLY being used, and why
 
@@ -151,6 +153,7 @@ fix = train.align_trainable_precision(trainer.model)
 print("precision fix:", fix)
 
 t0 = time.perf_counter()
+started_at = experiment.utc_now()
 result = trainer.train()
 elapsed = time.perf_counter() - t0
 print(f"train {elapsed:.0f}s  final loss {result.training_loss:.4f}")
@@ -172,6 +175,11 @@ row["mask_mode"] = MASK_MODE
 # Record the step budget so NB5/verify can CHECK that the four runs are comparable,
 # instead of trusting that they were configured the same way.
 row["max_steps"] = STEPS
+row.update(started_at_utc=started_at, baseline_sha256=BASELINE_SHA,
+           epochs=EPOCHS, max_length=TIER.max_length)
+report.write_json({"run": SPEC.key, "log_history": trainer.state.log_history,
+                   "device": device.describe(), "baseline_sha256": BASELINE_SHA},
+                  "training_correct.json", results_dir=ROOT / "results")
 report.append_row(row, results_dir=ROOT / "results")
 print(json.dumps(row, ensure_ascii=False, indent=2))
 

@@ -1,5 +1,3 @@
-# Reflection — Lab 21
-
 *Phần phản tư được AI hỗ trợ diễn đạt từ cuộc trao đổi và kết quả thực nghiệm của
 bài làm. Các tình huống được nêu là những việc đã xuất hiện trong quá trình làm bài.*
 

@@ -15,7 +15,7 @@ import json, os, pathlib, sys
 sys.path.insert(0, str(pathlib.Path.cwd() / "src"))
 sys.path.insert(0, str(pathlib.Path.cwd().parent / "src"))
 
-from labkit import evaluate as ev, generate, report
+from labkit import evaluate as ev, experiment, generate, report
 from labkit.config import get_tier
 
 ROOT = pathlib.Path.cwd() if (pathlib.Path.cwd() / "data").exists() else pathlib.Path.cwd().parent
@@ -32,7 +32,7 @@ EVAL_LIMIT = int(os.environ.get("EVAL_LIMIT", "0"))
 if EVAL_LIMIT:
     target, regression = target[:EVAL_LIMIT], regression[:EVAL_LIMIT]
 
-frozen = json.loads((ROOT / "results" / "baselines_frozen.json").read_text(encoding="utf-8"))
+frozen = experiment.require_frozen_baseline(ROOT, TIER)
 base_b = ev.GroupScores(**{k: v for k, v in frozen["baseline_b"].items() if k != "extra"})
 base_a = ev.GroupScores(**{k: v for k, v in frozen["baseline_a"].items() if k != "extra"})
 
@@ -42,6 +42,8 @@ if frozen.get("n_target") != len(target):
         f"eval slice mismatch: baselines were frozen on {frozen.get('n_target')} target items, "
         f"this run has {len(target)}. Set EVAL_LIMIT to the same value as NB2 (or unset both)."
     )
+if frozen.get("n_regression") != len(regression):
+    raise SystemExit("Regression eval slice khác NB2; dùng cùng EVAL_LIMIT.")
 print("baseline (b) target =", round(base_b.target, 3), "— đây là mốc phải vượt")
 
 # %% [markdown]
@@ -186,17 +188,18 @@ report.write_json(autopsy, "autopsy.json", results_dir=ROOT / "results")
 # cherry-pick và bị trừ điểm ở mục Evaluation Quality.
 
 # %%
-rows = []
-for i, (p, r) in enumerate(zip(preds_ft, target)):
-    s_ft = ev.triage_field_accuracy(p, r["label"])
-    rows.append({"i": i, "ticket": r["input"][:70], "ft_score": round(s_ft, 2),
-                 "ft_pred": p.replace("\n", " ")[:90]})
-rows.sort(key=lambda x: x["ft_score"])
-print("--- 3 ca TỆ NHẤT (bắt buộc đưa vào report) ---")
-print(report.markdown_table(rows[:3], ["i", "ticket", "ft_score", "ft_pred"]))
-print("\n--- 3 ca TỐT NHẤT ---")
-print(report.markdown_table(rows[-3:], ["i", "ticket", "ft_score", "ft_pred"]))
+rows = experiment.paired_examples(target, frozen["target_predictions_b"], preds_ft)
+selected = experiment.select_examples(rows)
+print(report.markdown_table(selected, ["i", "baseline_b_score", "ft_score", "delta", "outcome"]))
+losses = sum(row["outcome"] == "loss" for row in rows)
+if losses < 2:
+    print(f"Chỉ có {losses} ca FT thua baseline (b); báo trung thực, không đổi eval để tạo ca thua.")
 report.write_json(rows, "qualitative.json", results_dir=ROOT / "results")
+report.write_json({"tier": TIER.name, "model": TIER.model_id,
+                   "baseline_sha256": experiment.file_hash(ROOT / "results" / "baselines_frozen.json"),
+                   "target_predictions": preds_ft, "regression_predictions": rpreds_ft,
+                   "scores": scores_ft.as_dict(), "evaluated_at_utc": experiment.utc_now()},
+                  "evaluation_correct.json", results_dir=ROOT / "results")
 
 # %% [markdown]
 # ## ✅ Checkpoint NB5

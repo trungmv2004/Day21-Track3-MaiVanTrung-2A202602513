@@ -20,11 +20,12 @@ import json, os, pathlib, sys
 sys.path.insert(0, str(pathlib.Path.cwd() / "src"))
 sys.path.insert(0, str(pathlib.Path.cwd().parent / "src"))
 
-from labkit import evaluate as ev, generate, report
+from labkit import evaluate as ev, experiment, generate, report
 from labkit.config import get_tier
 
 ROOT = pathlib.Path.cwd() if (pathlib.Path.cwd() / "data").exists() else pathlib.Path.cwd().parent
 TIER = get_tier(os.environ.get("COMPUTE_TIER", "T4"))
+experiment.ensure_baseline_not_trained(ROOT)
 
 def load_jsonl(p):
     return [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
@@ -84,6 +85,8 @@ scores_b, preds_b, rpreds_b = score_run(model, tok, generate.OPTIMIZED_PROMPT, "
 
 # %%
 frozen = {
+    "frozen_at_utc": experiment.utc_now(),
+    "dataset_sha256": experiment.dataset_hashes(ROOT),
     "tier": TIER.name,
     "model": TIER.model_id,
     "baseline_a": scores_a.as_dict(),
@@ -94,6 +97,9 @@ frozen = {
     "n_regression": len(regression),
     "eval_limit": EVAL_LIMIT or None,
     "smoke_mode": bool(EVAL_LIMIT),
+    "target_predictions_a": preds_a,
+    "target_predictions_b": preds_b,
+    "regression_predictions_b": rpreds_b,
 }
 report.write_json(frozen, "baselines_frozen.json", results_dir=ROOT / "results")
 print(json.dumps(frozen, ensure_ascii=False, indent=2))

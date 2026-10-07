@@ -1,0 +1,2 @@
+# Corpus checksums are computed over bytes; preserve LF on Windows checkouts.
+data/*.jsonl text eol=lf
